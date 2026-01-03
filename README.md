@@ -76,8 +76,26 @@ redis-server
    - ANTHROPIC_API_KEY: Your Claude API key
    - WEBHOOK_SECRET: Generate a secure random string
    - REDIS_URL: Your Redis connection string (default: redis://127.0.0.1:6379)
-    ,
-    ## Step 7: Deploy the Service
+   - SENTRY_DSN: (Optional) Your Sentry DSN for error tracking
+
+## Step 6.5: Setup Error Tracking (Optional)
+
+For production deployments, we recommend setting up Sentry for error tracking:
+
+1. See [SENTRY-SETUP.md](SENTRY-SETUP.md) for detailed instructions
+2. Add your `SENTRY_DSN` to `.env`
+3. Sentry will automatically track errors, performance, and provide alerts
+
+**Benefits:**
+- Real-time error notifications
+- Full stack traces with context
+- Performance monitoring
+- Error grouping and trends
+- Free tier includes 5,000 errors/month
+
+Skip this step for local development.
+
+## Step 7: Deploy the Service
     ,
     ### Local Testing,
     ```bash,
@@ -244,7 +262,8 @@ Content-Type: application/json
 - **Structured Logging**: Winston logger with correlation IDs
 - **Metrics Endpoint**: `/metrics` - View processing statistics
 - **Enhanced Health Check**: `/health` - Checks API connectivity and queue status
-- **Error Tracking**: Detailed error logs with context
+- **Error Tracking**: Sentry integration for real-time error monitoring (optional)
+- **Detailed Error Logs**: Full context with correlation IDs
 
 ### Performance
 - **Async Processing**: Non-blocking webhook handling

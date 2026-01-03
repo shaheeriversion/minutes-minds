@@ -10,11 +10,30 @@ const Queue = require('bull');
 const NodeCache = require('node-cache');
 const crypto = require('crypto');
 const winston = require('winston');
+const Sentry = require('@sentry/node');
 require('isomorphic-fetch');
 require('dotenv').config();
 
 // Initialize Express app
 const app = express();
+
+// Initialize Sentry (must be first)
+if (process.env.SENTRY_DSN) {
+  Sentry.init({
+    dsn: process.env.SENTRY_DSN,
+    environment: process.env.NODE_ENV || 'development',
+    tracesSampleRate: 1.0,
+    integrations: [
+      new Sentry.Integrations.Http({ tracing: true }),
+      new Sentry.Integrations.Express({ app })
+    ]
+  });
+  
+  // Sentry request handler must be first
+  app.use(Sentry.Handlers.requestHandler());
+  app.use(Sentry.Handlers.tracingHandler());
+}
+
 app.use(helmet());
 app.use(express.json());
 
@@ -25,6 +44,7 @@ const config = {
   tenantId: process.env.AZURE_TENANT_ID,
   anthropicApiKey: process.env.ANTHROPIC_API_KEY,
   webhookSecret: process.env.WEBHOOK_SECRET || 'default-secret-change-me',
+  sentryDsn: process.env.SENTRY_DSN,
   redisUrl: process.env.REDIS_URL || 'redis://127.0.0.1:6379',
   maxRetries: parseInt(process.env.MAX_RETRIES) || 5,
   retryDelay: parseInt(process.env.RETRY_DELAY) || 60000, // 1 minute
@@ -144,6 +164,15 @@ async function getAccessToken(correlationId) {
       error: error.message,
       response: error.response?.data
     });
+    
+    // Report to Sentry
+    if (config.sentryDsn) {
+      Sentry.captureException(error, {
+        tags: { operation: 'getAccessToken' },
+        extra: { correlationId }
+      });
+    }
+    
     throw new Error(`Failed to get access token: ${error.message}`);
   }
 }
@@ -344,6 +373,15 @@ Format the output as a professional meeting minutes document in JSON with these 
       error: error.message,
       response: error.response?.data
     });
+    
+    // Report to Sentry
+    if (config.sentryDsn) {
+      Sentry.captureException(error, {
+        tags: { operation: 'generateMeetingMinutes' },
+        extra: { correlationId, meetingSubject: meetingInfo.subject }
+      });
+    }
+    
     throw new Error(`Failed to generate meeting minutes: ${error.message}`);
   }
 }
@@ -536,6 +574,21 @@ async function processMeetingJob(job) {
       error: error.message,
       stack: error.stack
     });
+
+    // Report to Sentry
+    if (config.sentryDsn) {
+      Sentry.captureException(error, {
+        tags: { 
+          operation: 'processMeetingJob',
+          jobId: job.id 
+        },
+        extra: { 
+          correlationId, 
+          meetingId,
+          attempt: job.attemptsMade + 1
+        }
+      });
+    }
 
     throw error;
   }
@@ -732,6 +785,11 @@ app.get('/metrics', async (req, res) => {
     res.status(500).json({ error: error.message });
   }
 });
+
+// Sentry error handler (must be before other error handlers)
+if (process.env.SENTRY_DSN) {
+  app.use(Sentry.Handlers.errorHandler());
+}
 
 // Graceful shutdown
 process.on('SIGTERM', async () => {
