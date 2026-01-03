@@ -1,0 +1,67 @@
+{
+    "manifest.json": {
+        "$schema": "https://developer.microsoft.com/en-us/json-schemas/teams/v1.16/MicrosoftTeams.schema.json",
+        "manifestVersion": "1.16",
+        "version": "1.0.0",
+        "id": "YOUR_APP_ID_HERE",
+        "packageName": "com.yourcompany.meetingminutes",
+        "developer": {
+            "name": "Your Company",
+            "websiteUrl": "https://yourcompany.com",
+            "privacyUrl": "https://yourcompany.com/privacy",
+            "termsOfUseUrl": "https://yourcompany.com/terms"
+        },
+        "name": {
+            "short": "Meeting Minutes Bot",
+            "full": "Automatic Meeting Minutes Generator"
+        },
+        "description": {
+            "short": "Automatically generates meeting minutes and action items",
+            "full": "This bot joins your meetings, transcribes conversations, and automatically generates comprehensive meeting minutes with action items for all participants."
+        },
+        "icons": {
+            "outline": "outline.png",
+            "color": "color.png"
+        },
+        "accentColor": "#FFFFFF",
+        "bots": [
+            {
+                "botId": "YOUR_BOT_ID_HERE",
+                "scopes": [
+                    "team",
+                    "personal",
+                    "groupchat"
+                ],
+                "supportsFiles": false,
+                "isNotificationOnly": false,
+                "supportsCalling": true,
+                "supportsVideo": true
+            }
+        ],
+        "permissions": [
+            "identity",
+            "messageTeamMembers"
+        ],
+        "validDomains": [
+            "yourapp.azurewebsites.net"
+        ],
+        "webApplicationInfo": {
+            "id": "YOUR_AZURE_APP_ID",
+            "resource": "https://graph.microsoft.com"
+        },
+        "authorization": {
+            "permissions": {
+                "resourceSpecific": [
+                    {
+                        "name": "OnlineMeetingTranscript.Read.Chat",
+                        "type": "Application"
+                    },
+                    {
+                        "name": "OnlineMeetings.ReadWrite.Chat",
+                        "type": "Application"
+                    }
+                ]
+            }
+        }
+    }
+}
