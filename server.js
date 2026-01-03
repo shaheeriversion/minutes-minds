@@ -10,7 +10,12 @@ const Queue = require('bull');
 const NodeCache = require('node-cache');
 const crypto = require('crypto');
 const winston = require('winston');
-const Sentry = require('@sentry/node');
+let Sentry;
+try {
+  Sentry = require('@sentry/node');
+} catch (error) {
+  console.warn('Sentry not available:', error.message);
+}
 require('isomorphic-fetch');
 require('dotenv').config();
 
@@ -18,20 +23,24 @@ require('dotenv').config();
 const app = express();
 
 // Initialize Sentry (must be first)
-if (process.env.SENTRY_DSN) {
-  Sentry.init({
-    dsn: process.env.SENTRY_DSN,
-    environment: process.env.NODE_ENV || 'development',
-    tracesSampleRate: 1.0,
-    integrations: [
-      new Sentry.Integrations.Http({ tracing: true }),
-      new Sentry.Integrations.Express({ app })
-    ]
-  });
-  
-  // Sentry request handler must be first
-  app.use(Sentry.Handlers.requestHandler());
-  app.use(Sentry.Handlers.tracingHandler());
+if (process.env.SENTRY_DSN && Sentry) {
+  try {
+    Sentry.init({
+      dsn: process.env.SENTRY_DSN,
+      environment: process.env.NODE_ENV || 'development',
+      tracesSampleRate: 1.0
+    });
+    
+    // Sentry request handler must be first
+    if (Sentry.Handlers) {
+      app.use(Sentry.Handlers.requestHandler());
+      app.use(Sentry.Handlers.tracingHandler());
+    }
+    
+    console.log('✅ Sentry initialized');
+  } catch (error) {
+    console.warn('⚠️  Sentry initialization failed:', error.message);
+  }
 }
 
 app.use(helmet());
@@ -166,7 +175,7 @@ async function getAccessToken(correlationId) {
     });
     
     // Report to Sentry
-    if (config.sentryDsn) {
+    if (config.sentryDsn && Sentry && Sentry.captureException) {
       Sentry.captureException(error, {
         tags: { operation: 'getAccessToken' },
         extra: { correlationId }
@@ -375,7 +384,7 @@ Format the output as a professional meeting minutes document in JSON with these 
     });
     
     // Report to Sentry
-    if (config.sentryDsn) {
+    if (config.sentryDsn && Sentry && Sentry.captureException) {
       Sentry.captureException(error, {
         tags: { operation: 'generateMeetingMinutes' },
         extra: { correlationId, meetingSubject: meetingInfo.subject }
@@ -576,7 +585,7 @@ async function processMeetingJob(job) {
     });
 
     // Report to Sentry
-    if (config.sentryDsn) {
+    if (config.sentryDsn && Sentry && Sentry.captureException) {
       Sentry.captureException(error, {
         tags: { 
           operation: 'processMeetingJob',
@@ -787,7 +796,7 @@ app.get('/metrics', async (req, res) => {
 });
 
 // Sentry error handler (must be before other error handlers)
-if (process.env.SENTRY_DSN) {
+if (process.env.SENTRY_DSN && Sentry && Sentry.Handlers) {
   app.use(Sentry.Handlers.errorHandler());
 }
 
