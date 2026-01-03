@@ -75,8 +75,13 @@ const limiter = rateLimit({
 
 app.use('/webhook', limiter);
 
-// Queue for processing meetings
-const meetingQueue = new Queue('meeting-processing', config.redisUrl, {
+// Queue for processing meetings - disabled by default (requires Redis)
+let meetingQueue = null;
+
+// Comment out queue initialization to run without Redis
+// Uncomment and configure REDIS_URL in .env to enable queue
+/*
+meetingQueue = new Queue('meeting-processing', config.redisUrl, {
   defaultJobOptions: {
     attempts: config.maxRetries,
     backoff: {
@@ -87,6 +92,10 @@ const meetingQueue = new Queue('meeting-processing', config.redisUrl, {
     removeOnFail: false
   }
 });
+*/
+
+logger.info('Server starting without queue (synchronous processing)');
+
 
 // Metrics tracking
 const metrics = {
@@ -532,32 +541,35 @@ async function processMeetingJob(job) {
   }
 }
 
-// Queue event handlers
-meetingQueue.on('completed', (job, result) => {
-  logger.info('Job completed', {
-    jobId: job.id,
-    result
+// Queue event handlers (only if queue is enabled)
+if (meetingQueue) {
+  meetingQueue.on('completed', (job, result) => {
+    logger.info('Job completed', {
+      jobId: job.id,
+      result
+    });
   });
-});
 
-meetingQueue.on('failed', (job, err) => {
-  logger.error('Job failed', {
-    jobId: job.id,
-    attempts: job.attemptsMade,
-    error: err.message
+  meetingQueue.on('failed', (job, err) => {
+    logger.error('Job failed', {
+      jobId: job.id,
+      attempts: job.attemptsMade,
+      error: err.message
+    });
   });
-});
 
-meetingQueue.on('stalled', (job) => {
-  logger.warn('Job stalled', {
-    jobId: job.id
+  meetingQueue.on('stalled', (job) => {
+    logger.warn('Job stalled', {
+      jobId: job.id
+    });
   });
-});
 
-// Process jobs
-meetingQueue.process(async (job) => {
-  return await processMeetingJob(job);
-});
+  // Process jobs
+  meetingQueue.process(async (job) => {
+    return await processMeetingJob(job);
+  });
+}
+
 
 // Webhook validation endpoint (for Microsoft Graph subscription)
 app.get('/webhook/meeting-ended', (req, res) => {
@@ -606,25 +618,46 @@ app.post('/webhook/meeting-ended', async (req, res) => {
         continue;
       }
 
-      // Add to queue for processing
-      const job = await meetingQueue.add({
-        meetingId,
-        chatId,
-        userId,
-        correlationId
-      });
+      // Add to queue for processing or process synchronously
+      if (meetingQueue) {
+        const job = await meetingQueue.add({
+          meetingId,
+          chatId,
+          userId,
+          correlationId
+        });
 
-      logger.info('Meeting job queued', {
-        correlationId,
-        jobId: job.id,
-        meetingId
-      });
+        logger.info('Meeting job queued', {
+          correlationId,
+          jobId: job.id,
+          meetingId
+        });
+      } else {
+        // Process synchronously without queue
+        logger.info('Processing meeting synchronously (no queue)', {
+          correlationId,
+          meetingId
+        });
+        
+        // Process in background without blocking response
+        processMeetingJob({
+          data: { meetingId, chatId, userId, correlationId },
+          id: correlationId,
+          attemptsMade: 0
+        }).catch(error => {
+          logger.error('Synchronous processing failed', {
+            correlationId,
+            error: error.message
+          });
+        });
+      }
     }
 
     res.status(202).json({ 
       success: true, 
-      message: 'Webhook received and queued for processing',
-      correlationId
+      message: 'Webhook received and processing',
+      correlationId,
+      queueEnabled: !!meetingQueue
     });
   } catch (error) {
     logger.error('Error processing webhook', {
@@ -643,12 +676,20 @@ app.get('/health', async (req, res) => {
     await getAccessToken('health-check');
     
     // Check queue health
-    const queueHealth = await meetingQueue.isReady();
+    let queueHealth = 'disabled';
+    if (meetingQueue) {
+      try {
+        const isReady = await meetingQueue.isReady();
+        queueHealth = isReady ? 'connected' : 'disconnected';
+      } catch (error) {
+        queueHealth = 'error';
+      }
+    }
     
     res.json({ 
       status: 'healthy',
       timestamp: new Date().toISOString(),
-      queue: queueHealth ? 'connected' : 'disconnected',
+      queue: queueHealth,
       metrics: {
         totalProcessed: metrics.totalProcessed,
         totalSuccess: metrics.totalSuccess,
@@ -672,7 +713,14 @@ app.get('/health', async (req, res) => {
 // Metrics endpoint
 app.get('/metrics', async (req, res) => {
   try {
-    const queueCounts = await meetingQueue.getJobCounts();
+    let queueCounts = { status: 'disabled' };
+    if (meetingQueue) {
+      try {
+        queueCounts = await meetingQueue.getJobCounts();
+      } catch (error) {
+        queueCounts = { status: 'error', error: error.message };
+      }
+    }
     
     res.json({
       processing: metrics,
@@ -689,14 +737,18 @@ app.get('/metrics', async (req, res) => {
 process.on('SIGTERM', async () => {
   logger.info('SIGTERM received, shutting down gracefully');
   
-  await meetingQueue.close();
+  if (meetingQueue) {
+    await meetingQueue.close();
+  }
   process.exit(0);
 });
 
 process.on('SIGINT', async () => {
   logger.info('SIGINT received, shutting down gracefully');
   
-  await meetingQueue.close();
+  if (meetingQueue) {
+    await meetingQueue.close();
+  }
   process.exit(0);
 });
 
