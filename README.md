@@ -102,20 +102,117 @@ redis-server
     5. Upload app.zip,
     ,
     ## Step 9: Subscribe to Meeting Events
-    ,
-    Use Microsoft Graph webhooks to get notified when meetings end:,
-    ,
-    ```javascript,
-    // Subscription creation (add this to your service),
-    POST https://graph.microsoft.com/v1.0/subscriptions,
-    {,
-      'changeType': 'updated',,
-      'notificationUrl': 'https://your-app.azurewebsites.net/webhook/meeting-ended',,
-      'resource': '/communications/onlineMeetings',,
-      'expirationDateTime': '2024-12-31T18:23:45.9356913Z',,
-      'clientState': 'secretClientValue',
-    },
-    ```,
+
+Microsoft Graph uses webhooks to notify your app when meetings end. You need to create a subscription:
+
+### Prerequisites
+1. Your webhook endpoint must be publicly accessible (deployed to Azure or use ngrok for testing)
+2. Your server must be running to handle the validation request
+
+### Setup Steps
+
+1. **Update your .env file with webhook details:**
+```bash
+WEBHOOK_URL="https://your-app.azurewebsites.net/webhook/meeting-ended"
+WEBHOOK_SECRET="your-generated-secret-from-earlier"
+SUBSCRIPTION_DAYS="3"
+```
+
+2. **Run the setup script:**
+```bash
+node setup-webhook.js
+```
+
+This script will:
+- Authenticate with Microsoft Graph
+- List any existing subscriptions
+- Delete old subscriptions with the same URL
+- Create a new subscription
+- Display subscription details
+
+### Expected Output
+```
+🚀 Microsoft Graph Webhook Setup Tool
+
+🔑 Getting access token...
+✅ Access token obtained
+
+📋 Fetching existing subscriptions...
+   No existing subscriptions found
+
+🔔 Creating new webhook subscription...
+   Notification URL: https://your-app.azurewebsites.net/webhook/meeting-ended
+   Resource: /communications/onlineMeetings
+✅ Webhook subscription created successfully!
+
+📝 Subscription Details:
+   ID: abc123...
+   Resource: /communications/onlineMeetings
+   Change Types: created,updated
+   Notification URL: https://your-app.azurewebsites.net/webhook/meeting-ended
+   Expires: 2026-01-06T...
+   Created: 2026-01-03T...
+```
+
+### Important Notes
+- **Subscriptions expire**: Maximum 3 days for most resources
+- **Renewal required**: Run the script again before expiration or implement auto-renewal
+- **Validation**: Microsoft will send a validation request to your webhook URL when creating the subscription
+- **Public accessibility**: Your webhook endpoint must be reachable from the internet
+
+### Testing with ngrok (Local Development)
+If testing locally, use ngrok to expose your local server:
+
+```bash
+# Start your server
+npm start
+
+# In another terminal, start ngrok
+ngrok http 3000
+
+# Use the ngrok URL in your .env
+WEBHOOK_URL="https://abc123.ngrok.io/webhook/meeting-ended"
+
+# Run setup
+node setup-webhook.js
+```
+
+### Troubleshooting Subscription Creation
+
+**Error: "Subscription validation request failed"**
+- Ensure your server is running
+- Check that the webhook URL is publicly accessible
+- Verify your server responds to GET requests with the validationToken
+
+**Error: "Insufficient privileges"**
+- Verify admin consent was granted for all permissions
+- Check that your app has `OnlineMeetings.Read.All` permission
+
+**Error: "Invalid clientState"**
+- Ensure WEBHOOK_SECRET matches in both .env and the subscription
+
+### Manual Subscription (Alternative)
+
+You can also create subscriptions manually using Graph Explorer or Postman:
+
+**POST** `https://graph.microsoft.com/v1.0/subscriptions`
+
+**Headers:**
+```
+Authorization: Bearer {your-access-token}
+Content-Type: application/json
+```
+
+**Body:**
+```json
+{
+  "changeType": "created,updated",
+  "notificationUrl": "https://your-app.azurewebsites.net/webhook/meeting-ended",
+  "resource": "/communications/onlineMeetings",
+  "expirationDateTime": "2026-01-06T18:23:45.9356913Z",
+  "clientState": "your-webhook-secret"
+}
+```
     ,
     ## Usage
 

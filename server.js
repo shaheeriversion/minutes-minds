@@ -581,10 +581,10 @@ app.post('/webhook/meeting-ended', async (req, res) => {
   });
 
   // Validate webhook
-  // if (!validateWebhookSignature(req)) {
-  //   logger.warn('Invalid webhook signature', { correlationId });
-  //   return res.status(401).json({ error: 'Unauthorized' });
-  // }
+  if (!validateWebhookSignature(req)) {
+    logger.warn('Invalid webhook signature', { correlationId });
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
 
   try {
     const notifications = req.body.value || [];
